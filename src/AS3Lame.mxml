@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009" 
+					   xmlns:s="library://ns.adobe.com/flex/spark" 
+					   xmlns:mx="library://ns.adobe.com/flex/mx" backgroundColor="#555555" creationComplete="windowedapplication1_creationCompleteHandler(event)">
+	
+	<fx:Script>
+		<![CDATA[
+			import flash.events.MouseEvent;
+			import flash.events.ProgressEvent;
+			import flash.events.SampleDataEvent;
+			import flash.media.Microphone;
+			import flash.system.Capabilities;
+			
+			import mx.collections.ArrayCollection;
+			import mx.controls.Alert;
+			import mx.events.FlexEvent;
+
+			[Bindable]
+			private var out:String = new String();
+			[Bindable]
+			private var kbps:ArrayCollection = new ArrayCollection([{label : "64kbps", data : "64"},
+																	{label : "128kbps", data : "128"},
+																	{label : "192kbps", data : "192"},
+																	{label : "320kbps", data : "320"}]);
+			private var process:NativeProcess;
+			
+			private static const FILE_NAME:String = "recording.wav";
+			
+			private var soundBytes:ByteArray = new ByteArray();
+			private var mic:Microphone;
+			private var nativeProcessStartupInfo:NativeProcessStartupInfo;
+			private var f:FileStream = new FileStream();
+			private var file:File;
+			
+			protected function windowedapplication1_creationCompleteHandler(event:FlexEvent):void
+			{			
+				if ( NativeProcess.isSupported )
+					startCommunication();
+			}
+			
+			private function startCommunication ():void
+			{
+				stop.enabled = false;
+				var file:File = File.applicationDirectory;
+				file = file.resolvePath("apps");
+				
+				if (Capabilities.os.toLowerCase().indexOf("mac") > -1)
+					file = file.resolvePath("lame.bin");
+				else if ( Capabilities.os.toLowerCase().indexOf("win") > -1)
+					file = file.resolvePath("lame.exe");
+				
+				nativeProcessStartupInfo = new NativeProcessStartupInfo();
+				nativeProcessStartupInfo.executable = file;
+				process = new NativeProcess();
+				process.addEventListener(ProgressEvent.STANDARD_ERROR_DATA, onErrorData);
+			}
+			
+			private function onErrorData ( e:ProgressEvent ):void
+			{
+				out += process.standardError.readUTFBytes(process.standardError.bytesAvailable);
+			}
+
+			protected function record_clickHandler(event:MouseEvent):void
+			{
+				out = "Now speak :)";
+				event.currentTarget.enabled = false;
+				stop.enabled = !event.currentTarget.enabled;
+				mic = Microphone.getMicrophone();
+				mic.setSilenceLevel(0, 4000);
+				mic.gain = 100;
+				mic.rate = 44;
+				soundBytes.length = 0;
+				mic.addEventListener(SampleDataEvent.SAMPLE_DATA, sampleHandler);
+			}
+			
+			private function sampleHandler(event:SampleDataEvent):void
+			{
+				while(event.data.bytesAvailable)
+					soundBytes.writeFloat(event.data.readFloat());
+			}
+
+			protected function stop_clickHandler(event:MouseEvent):void
+			{
+				event.currentTarget.enabled = false;
+				record.enabled = !event.currentTarget.enabled;
+				out = new String();
+				mic.removeEventListener(SampleDataEvent.SAMPLE_DATA, sampleHandler);
+				soundBytes.position = 0;
+				file = File.desktopDirectory.resolvePath(FILE_NAME);
+				f.open( file, FileMode.WRITE);
+				f.writeBytes(WaveEncoder.encode(soundBytes, 1));
+				f.close();
+				var args:Vector.<String> = new Vector.<String>;
+				// optional parameters
+				args.push('-h');
+				args.push('--abr');
+				args.push(kbpsList.selectedItem.data);
+				args.push('--ta');
+				args.push('Me!');
+				args.push('--tt');
+				args.push('My Voice recorded and compressed in AIR ;)');
+				// ********************
+				args.push(File.desktopDirectory.nativePath + '/'+FILE_NAME);
+				args.push(File.desktopDirectory.nativePath + '/recording-compressed.mp3');
+				nativeProcessStartupInfo.arguments = args;
+				process.start(nativeProcessStartupInfo);
+				Alert.show("2 files created on your desktop : recording.wav and recording-compressed.mp3");
+			}
+		]]>
+	</fx:Script>
+	
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	
+	<s:TextArea id="output" color="#FFFFFF" contentBackgroundColor="#666666" borderVisible="false" text="{out}" width="603" height="364"/>
+	<s:Button id="record" label="Record" x="10" y="382" click="record_clickHandler(event)"/>
+	<s:Button id="stop" label="Stop and Compress" x="92" y="382" click="stop_clickHandler(event)"/>
+	<s:ComboBox id="kbpsList" dataProvider="{kbps}" selectedIndex="0" x="232" y="381"/>
+		
+</s:WindowedApplication>
